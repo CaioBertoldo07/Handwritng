@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "Bash(python *)",
+      "Bash(potrace --version)",
+      "Bash(where potrace *)",
+      "PowerShell(winget search *)",
+      "Bash(choco *)"
+    ]
+  }
+}
