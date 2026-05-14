@@ -12,6 +12,7 @@ Output: MyHandwriting.ttf
 import os
 import sys
 import re
+import argparse
 import xml.etree.ElementTree as ET
 
 from fontTools.fontBuilder import FontBuilder
@@ -41,6 +42,8 @@ SPECIAL_CODEPOINTS = {
     "semicolon"  : 0x3B,
     "hyphen"     : 0x2D,
     "underscore" : 0x5F,
+    "quotedbl"   : 0x22,
+    "apostrophe" : 0x27,
     "parenleft"  : 0x28,
     "parenright" : 0x29,
 }
@@ -192,21 +195,34 @@ def draw_notdef(pen, advance: int = 500):
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    if not os.path.isdir(SVG_DIR):
-        print(f"ERROR: '{SVG_DIR}/' not found. Run 02_vectorize.py first.",
+    parser = argparse.ArgumentParser(
+        description="Assemble a TTF from SVG glyph outlines."
+    )
+    parser.add_argument("--svg-dir", default=SVG_DIR,
+                        help="Input directory containing SVG glyphs (default: svgs)")
+    parser.add_argument("--out-file", default=OUT_FILE,
+                        help="Output TTF file path (default: MyHandwriting.ttf)")
+    parser.add_argument("--family-name", default=FAMILY_NAME,
+                        help="Font family name (default: MyHandwriting)")
+    parser.add_argument("--style-name", default=STYLE_NAME,
+                        help="Font style name (default: Regular)")
+    args = parser.parse_args()
+
+    if not os.path.isdir(args.svg_dir):
+        print(f"ERROR: '{args.svg_dir}/' not found. Run 02_vectorize.py first.",
               file=sys.stderr)
         sys.exit(1)
 
     svgs = {
-        os.path.splitext(f)[0]: os.path.join(SVG_DIR, f)
-        for f in os.listdir(SVG_DIR)
+        os.path.splitext(f)[0]: os.path.join(args.svg_dir, f)
+        for f in os.listdir(args.svg_dir)
         if f.endswith(".svg")
     }
     if not svgs:
-        print(f"No SVG files found in '{SVG_DIR}/'.")
+        print(f"No SVG files found in '{args.svg_dir}/'.")
         sys.exit(1)
 
-    print(f"Found {len(svgs)} SVG(s).  Building '{OUT_FILE}' ...\n")
+    print(f"Found {len(svgs)} SVG(s).  Building '{args.out_file}' ...\n")
 
     # ── compute global scale from uppercase-A height ──────────────────────────
     ref_name = next((n for n in ("cap_A", "cap_H", "cap_B") if n in svgs), None)
@@ -291,12 +307,12 @@ def main():
 
     fb.setupHorizontalHeader(ascent=ASCENDER, descent=DESCENDER)
     fb.setupNameTable({
-        "familyName"        : FAMILY_NAME,
-        "styleName"         : STYLE_NAME,
-        "uniqueFontIdentifier": f"{FAMILY_NAME}-{STYLE_NAME}",
-        "fullName"          : f"{FAMILY_NAME} {STYLE_NAME}",
+        "familyName"        : args.family_name,
+        "styleName"         : args.style_name,
+        "uniqueFontIdentifier": f"{args.family_name}-{args.style_name}",
+        "fullName"          : f"{args.family_name} {args.style_name}",
         "version"           : "Version 1.0",
-        "psName"            : f"{FAMILY_NAME}-{STYLE_NAME}",
+        "psName"            : f"{args.family_name}-{args.style_name}",
     })
     fb.setupOS2(
         sTypoAscender   = ASCENDER,
@@ -311,8 +327,8 @@ def main():
     fb.setupPost()
     fb.setupHead(unitsPerEm=UPM)
 
-    fb.font.save(OUT_FILE)
-    print(f"Font saved -> {OUT_FILE}")
+    fb.font.save(args.out_file)
+    print(f"Font saved -> {args.out_file}")
     print(f"  UPM={UPM}, cap_height={CAP_HEIGHT}, scale={scale:.4f}")
     print(f"  Glyphs: {len(glyph_order)} total ({ok} unique outlines)")
 

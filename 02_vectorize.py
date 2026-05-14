@@ -11,6 +11,7 @@ Output: svgs/<name>.svg
 
 import os
 import sys
+import argparse
 import cv2
 import numpy as np
 import vtracer
@@ -39,11 +40,36 @@ def preprocess_png(png_path: str) -> str:
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    # vtracer expects the ink to be dark on a white background — ensure that
+    # vtracer expects the ink to be dark on a white background — ensure that.
     ink_pixels = np.count_nonzero(bw == 0)
     total      = bw.size
     if ink_pixels > total // 2:
-        bw = cv2.bitwise_not(bw)          # flip if image is inverted
+        bw = cv2.bitwise_not(bw)
+
+    # Apply extra cleanup only to glyphs that historically showed a black
+    # background artefact after tracing.
+    risky = {"0.png", "8.png", "hyphen.png", "underscore.png"}
+    if os.path.basename(png_path) in risky:
+        fg = (bw == 0).astype(np.uint8)
+        n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(fg, connectivity=8)
+        h, w = fg.shape
+        border_labels = set(np.unique(np.concatenate([
+            labels[0, :], labels[h - 1, :], labels[:, 0], labels[:, w - 1]
+        ])))
+
+        cleaned = np.zeros_like(fg)
+        for label in range(1, n_labels):
+            area = stats[label, cv2.CC_STAT_AREA]
+            if label in border_labels:
+                continue
+            if area < 6:
+                continue
+            cleaned[labels == label] = 1
+
+        # Only replace when cleanup still leaves meaningful ink.
+        if int(cleaned.sum()) >= 20:
+            bw = np.full_like(bw, 255)
+            bw[cleaned == 1] = 0
 
     tmp_path = png_path.replace(".png", "_clean.png")
     cv2.imwrite(tmp_path, bw)
@@ -76,29 +102,38 @@ def vectorize_glyph(png_path: str, svg_path: str) -> bool:
 
 
 def main():
-    if not os.path.isdir(GLYPH_DIR):
-        print(f"ERROR: '{GLYPH_DIR}/' not found. Run 01_extract_glyphs.py first.",
+    parser = argparse.ArgumentParser(
+        description="Convert glyph PNGs to SVG vector outlines."
+    )
+    parser.add_argument("--glyph-dir", default=GLYPH_DIR,
+                        help="Input directory with glyph PNGs (default: glyphs)")
+    parser.add_argument("--svg-dir", default=SVG_DIR,
+                        help="Output directory for SVGs (default: svgs)")
+    args = parser.parse_args()
+
+    if not os.path.isdir(args.glyph_dir):
+        print(f"ERROR: '{args.glyph_dir}/' not found. Run 01_extract_glyphs.py first.",
               file=sys.stderr)
         sys.exit(1)
 
-    os.makedirs(SVG_DIR, exist_ok=True)
+    os.makedirs(args.svg_dir, exist_ok=True)
 
     # Collect non-debug PNGs
     pngs = sorted(
-        f for f in os.listdir(GLYPH_DIR)
+        f for f in os.listdir(args.glyph_dir)
         if f.endswith(".png") and not f.startswith("_")
     )
     if not pngs:
-        print(f"No glyph PNGs found in '{GLYPH_DIR}/'.")
+        print(f"No glyph PNGs found in '{args.glyph_dir}/'.")
         sys.exit(1)
 
-    print(f"Vectorising {len(pngs)} glyph(s) from '{GLYPH_DIR}/' -> '{SVG_DIR}/' ...\n")
+    print(f"Vectorising {len(pngs)} glyph(s) from '{args.glyph_dir}/' -> '{args.svg_dir}/' ...\n")
 
     ok = fail = 0
     for fname in pngs:
         name     = os.path.splitext(fname)[0]
-        png_path = os.path.join(GLYPH_DIR, fname)
-        svg_path = os.path.join(SVG_DIR,   f"{name}.svg")
+        png_path = os.path.join(args.glyph_dir, fname)
+        svg_path = os.path.join(args.svg_dir,   f"{name}.svg")
 
         success = vectorize_glyph(png_path, svg_path)
         if success:
